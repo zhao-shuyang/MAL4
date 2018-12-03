@@ -2,9 +2,9 @@ import sys
 import csv
 import subprocess
 
-audio_folder = "/home/zhaos/Audioset_wav"
+audio_folder = "/worktmp/zhaos/data/AudioSet"
 
-with open('meta/balanced_train_segments.csv', 'r') as csvfile:
+with open('meta/eval_segments.csv', 'r') as csvfile:
     reader = csv.DictReader(csvfile)
     for item in reader:
         print(item)
