@@ -27,24 +27,28 @@ class LabelSet(object):
 
     def __create_tables__(self):
         sql = """
-        CREATE TABLE segments(
-        segment_id INTEGER PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS segments(
+        segment_id VARCHAR(32) PRIMARY KEY,
         audio_file VARCHAR(256),
-        index_in_file INTEGER,
         feature_start_index INTEGER,
         feature_end_index INTEGER,
         repr_index INTEGER,        
-        time_stamp INTEGER, device_id INTEGER,
-        UNIQUE (audio_file, index_in_file) ON CONFLICT IGNORE
+        UNIQUE (audio_file) ON CONFLICT IGNORE
         );
-        CREATE INDEX segment_indexing ON segments (segment_id);
-
-        CREATE TABLE classes(
+        """
+        self.db_conn.execute(sql)
+        self.db_conn.execute("CREATE INDEX IF NOT EXISTS segment_indexing ON segments (segment_id);")
+        sql = """
+        CREATE TABLE IF NOT EXISTS classes(
         class_id INTEGER PRIMARY KEY,
+        ASID VARCHAR(32) UNIQUE ON CONFLICT IGNORE, 
         class_name VARCHAR(256) UNIQUE ON CONFLICT IGNORE 
         );
+        """
+        self.db_conn.execute(sql)
         
-        CREATE TABLE labels(
+        sql = """
+        CREATE TABLE IF NOT EXISTS labels(
         label_id INTEGER PRIMARY KEY,
         segment_id INTEGER NOT NULL,
         class_id INTEGER NOT NULL,
@@ -53,11 +57,12 @@ class LabelSet(object):
         FOREIGN KEY (class_id) REFERENCES classes(class_id) ON DELETE CASCADE,
         UNIQUE (segment_id, class_id, label_type) ON CONFLICT IGNORE
         );
-        CREATE INDEX label_seg_index ON labels (segment_id);
-        CREATE INDEX label_class_index ON labels (class_id);
         """
         self.db_conn.execute(sql)
 
+        self.db_conn.execute("CREATE INDEX IF NOT EXISTS label_seg_index ON labels (segment_id);")
+        self.db_conn.execute("CREATE INDEX IF NOT EXISTS label_class_index ON labels (class_id);")
+    
     def __commit__(self):
         self.db_conn.commit()
 
@@ -69,7 +74,7 @@ class LabelSet(object):
         sql = """
         INSERT OR IGNORE INTO {0} ({1}) VALUES ({2})
         """.format(table_name, ','.join(record_dict.keys()), ','.join(["'{0}'".format(str(v)) for v in record_dict.values()]))
-        #print (sql)
+        print (sql)
         self.cursor.execute(sql)
         return self.cursor.lastrowid
 
@@ -106,21 +111,8 @@ class LabelSet(object):
         
     def get_segment_by_id(self, segment_id):
         sql = """
-        SELECT audio_file, index_in_file, feature_index FROM segments
+        SELECT audio_file, feature_index FROM segments
         WHERE segment_id == {0}
         """.format(segment_id)
         self.cursor.execute(sql)
-        record = self.cursor.fetchone()
-        print (record)
-        return {"audio_file":record[0], "index_in_file":record[1], "feature_index":record[2]}
-
-    def get_segment_by_repr_index(self, repr_index):
-        sql = """
-        SELECT segment_id, audio_file, index_in_file FROM segments
-        WHERE repr_index == {0}
-        """.format(repr_index)
-        self.cursor.execute(sql)
-        record = self.cursor.fetchone()
-        return {"segment_id":record[0], "audio_file":record[1], "index_in_file":record[2]}
-
-        
+        return 
