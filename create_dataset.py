@@ -2,6 +2,9 @@
 import datasetSQL
 import csv
 import h5py
+import librosa
+import soundfile
+import sys, os
 
 db1_path = "database/db_train.sqlite"
 feature1_path = "database/mel_train.hdf5"
@@ -10,6 +13,7 @@ feature2_path = "database/mel_eval.hdf5"
 
 file_csv = "meta/wavfiles.csv"
 class_csv = "meta/class_labels_indices.csv"
+wav_path = '/worktmp/zhaos/data/AudioSet'
 segment1_csv =  "meta/balanced_train_segments.csv"
 segment2_csv =  "meta/eval_segments.csv"
 
@@ -74,19 +78,33 @@ def add_labels(db_path, segment_csv):
             
             #print (item["positive_labels"])
             
-def compute_features(db_path, feature_path):
-    h5 = hdf5.
+def compute_features(db_path, feature_path, wav_root):
+    h5w = h5py.File(feature_path, 'w')
     db = datasetSQL.LabelSet(db_path)
+    trg_sr = 32000
+    
     sql = """
-    SELECT segment_id FROM segments
+    SELECT segment_id, audio_file FROM segments
     WHERE audio_file NOT NULL
     """
-    segment_list = db.
-    pass
+    segment_list = db.cursor.execute(sql)
+    for segment_tuple in segment_list:
+        segment_id, audio_file = segment_tuple[0].decode('utf-8'), segment_tuple[1].decode('utf-8')
+        print (segment_id, audio_file)
+        y, src_sr = soundfile.read(os.path.join(wav_root, audio_file))
+        if len(y.shape) > 1:
+            y = y[:,0]
+        y = librosa.core.resample(y, src_sr, trg_sr)
+        mel = librosa.feature.melspectrogram(y,trg_sr,n_fft=1024,hop_length=512,n_mels=128)
+        log_mel = librosa.power_to_db(mel).T
+        print (log_mel.shape)
+        h5w.create_dataset(segment_id, data=log_mel)
+    return
 
 
 if __name__ == '__main__':
-    #initiate_database(db1_path, segment1_csv)
-    #link_audio_file(db1_path, file_csv)
-    #add_classes(db1_path, class_csv)
-    add_labels(db1_path, segment1_csv)
+    initiate_database(db2_path, segment2_csv)
+    link_audio_file(db2_path, file_csv)
+    add_classes(db2_path, class_csv)
+    add_labels(db2_path, segment2_csv)
+    compute_features(db2_path, feature2_path, wav_path)
