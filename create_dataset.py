@@ -1,4 +1,3 @@
-
 import datasetSQL
 import csv
 import h5py
@@ -6,17 +5,20 @@ import librosa
 import soundfile
 import sys, os
 
-db1_path = "database/db_train.sqlite"
-feature1_path = "database/mel_train.hdf5"
-db2_path = "database/db_eval.sqlite"
-feature2_path = "database/mel_eval.hdf5"
+db1_path = "database/db_train_1.sqlite"
+feature1_path = "/wrk/shuyzhao/mel_train_44100.hdf5"
+db2_path = "database/db_eval_1.sqlite"
+feature2_path = "/wrk/shuyzhao/mel_eval_44100.hdf5"
+db3_path = "database/db_combine_trim.sqlite"
+feature3_path = "/wrk/shuyzhao/mel_combine_44100_1024_128.hdf5"
 
-file_csv = "meta/wavfiles.csv"
+file1_csv = "meta/wavfiles.csv"
+file2_csv = "meta/wavfiles2.csv"
 class_csv = "meta/class_labels_indices.csv"
-wav_path = '/worktmp/zhaos/data/AudioSet'
+wav_path = '/proj/asignal/Audioset/wav'
 segment1_csv =  "meta/balanced_train_segments.csv"
 segment2_csv =  "meta/eval_segments.csv"
-
+ontology_json = "meta/ontology.json"
 
 def initiate_database(db_path, segment_csv):
     db = datasetSQL.LabelSet(db_path)
@@ -30,7 +32,7 @@ def initiate_database(db_path, segment_csv):
 
 def link_audio_file(db_path, filecsv):
     db = datasetSQL.LabelSet(db_path)
-    with open(file_csv, 'r') as f:
+    with open(filecsv, 'r') as f:
         #for item in csv.DictReader(f):
         for line in f.readlines():
             item = {}
@@ -77,11 +79,81 @@ def add_labels(db_path, segment_csv):
             #item['positive_labels'] = ','.join(line.split(',')[3:])
             
             #print (item["positive_labels"])
+
+def refine_labels(db_path):
+    #Strategy: loop five times to ensure all the existing labels have their parental classes labeled.
+    import json
+    with open(ontology_json, 'r') as f:
+        ontology_list = json.load(f)
+    db = datasetSQL.LabelSet(db_path)
+
+    sql = """
+       ALTER TABLE classes
+       ADD COLUMN leaf_node BOOL
+    """
+    try:
+        db.cursor.execute(sql)
+    except:
+        pass
+    
+    for loop_i in range(5):
+        for class_dict in ontology_list:
+            parent_asid = class_dict['id']
+            sql = """
+            SELECT class_id from classes WHERE ASID = '{0}'
+            """.format(parent_asid)
+            db.cursor.execute(sql)
+            record = db.cursor.fetchone()
+            if record: #Some class in ontology does not exist in dataset
+                parent_id = record[0]
+            else:
+                continue 
+
+            if len(class_dict['child_ids']) == 0:
+                sql = """
+                UPDATE classes SET leaf_node=1
+                WHERE class_id = {0}
+                """.format(parent_id)
+            else:
+                sql = """
+                UPDATE classes SET leaf_node=0
+                WHERE class_id = {0}
+                """.format(parent_id)
+
+            db.cursor.execute(sql)
             
+            for child_asid in class_dict['child_ids']:
+                sql = """
+                SELECT class_id from classes WHERE ASID = '{0}'
+                """.format(child_asid)
+                db.cursor.execute(sql)
+                record = db.cursor.fetchone()
+                if record: #Some class in ontology does not exist in dataset
+                    child_id = record[0]
+                else:
+                    continue 
+                print (parent_asid, child_asid)
+                sql = """
+                INSERT INTO labels (segment_id, class_id, label_type)
+                SELECT segment_id, {1},0 from segments
+                WHERE segment_id IN
+                (SELECT segment_id FROM labels WHERE class_id = {0})
+                AND segment_id NOT IN
+                (SELECT segment_id FROM labels WHERE class_id = {1})                
+                """.format(child_id, parent_id)
+                db.cursor.execute(sql)
+                #print (db.cursor.fetchall())
+
+    
+    db.__commit__()
+    db.__close__()
+
+
+    
 def compute_features(db_path, feature_path, wav_root):
     h5w = h5py.File(feature_path, 'w')
-    db = datasetSQL.LabelSet(db_path)
-    trg_sr = 32000
+    db = daasetSQL.LabelSet(db_path)
+    trg_sr = 44100
     
     sql = """
     SELECT segment_id, audio_file FROM segments
@@ -95,7 +167,16 @@ def compute_features(db_path, feature_path, wav_root):
         if len(y.shape) > 1:
             y = y[:,0]
         y = librosa.core.resample(y, src_sr, trg_sr)
-        mel = librosa.feature.melspectrogram(y,trg_sr,n_fft=1024,hop_length=512,n_mels=128)
+        try:
+            mel = librosa.feature.melspectrogram(y,trg_sr,n_fft=1024,hop_length=512,n_mels=128)
+        except:
+            print ("Failure:",segment_id, audio_file)
+            sql = """
+            UPDATE segments SET audio_file=NULL WHERE segment_id = '{0}'
+            """.format(segment_id)
+            db.cursor.execute(sql)
+            db.__commit__()
+            continue
         log_mel = librosa.power_to_db(mel).T
         print (log_mel.shape)
         h5w.create_dataset(segment_id, data=log_mel)
@@ -103,8 +184,9 @@ def compute_features(db_path, feature_path, wav_root):
 
 
 if __name__ == '__main__':
-    initiate_database(db2_path, segment2_csv)
-    link_audio_file(db2_path, file_csv)
-    add_classes(db2_path, class_csv)
-    add_labels(db2_path, segment2_csv)
-    compute_features(db2_path, feature2_path, wav_path)
+    #initiate_database(db1_path, segment1_csv)
+    #link_audio_file(db1_path, file1_csv)
+    #add_classes(db1_path, class_csv)
+    #add_labels(db1_path, segment1_csv)
+    #compute_features(db3_path, feature3_path, wav_path)
+    refine_labels('database/db_Audioset_UrbanSound.sqlite')

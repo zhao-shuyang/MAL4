@@ -10,7 +10,7 @@ class LabelSet(object):
     Audio Segment dataset managing with SQL.
     """
     def __init__(self, file_name):
-        self.label_type_map = {'ground_truth':0, 'prediction':1, 'annotation':2}
+        self.label_type_map = {'ground_truth':0, 'annotation':1, 'propagated':2, 'prediction':3}
         self.__connect__(file_name)
 
     def __connect__(self, file_name):
@@ -30,6 +30,7 @@ class LabelSet(object):
         CREATE TABLE IF NOT EXISTS segments(
         segment_id VARCHAR(32) PRIMARY KEY,
         audio_file VARCHAR(256),
+        fold INTEGER,
         feature_start_index INTEGER,
         feature_end_index INTEGER,
         repr_index INTEGER,        
@@ -94,21 +95,6 @@ class LabelSet(object):
     def initialize(self):
         self.__create_tables__()
 
-    def clear_labels(self, label_type='annotation', exception_list=[]):
-        if label_type in ['ground_truth', 'prediction', 'annotation']:
-            label_type = self.label_type_map[label_type]
-        if exception_list:
-            exception_cond = "AND segment_id NOT IN ({0})".format(','.join([str(segment_id) for segment_id in exception_list]))
-            #print exception_cond
-        else:
-            exception_cond = ''
-            sql = """
-            DELETE  FROM labels
-            WHERE label_type = {0}
-            {1}
-            """.format(label_type, exception_cond)
-        self.cursor.execute(sql)
-        
     def get_segment_by_id(self, segment_id):
         sql = """
         SELECT audio_file, feature_index FROM segments
